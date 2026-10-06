@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FARASER — Integrated Mother Build v2.4</title>
+<title>FARASER — Integrated Mother Build v2.5</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f4f4f4;color:#171717}
 header{padding:22px;background:#111;color:#fff} main{max-width:1180px;margin:auto;padding:18px}
@@ -17,7 +17,7 @@ small{color:#555}
 </style>
 </head>
 <body>
-<header><h1>FARASER — Integrated Mother Build v2.4</h1>
+<header><h1>FARASER — Integrated Mother Build v2.5</h1>
 <div>DATA → IDENTIFY → NORMALIZE → RELATE → CHANGE → AUDIT → EVIDENCE → REVIEW → RECOVER → CLOSE</div></header>
 <main>
 <section id="project" class="card">
@@ -59,9 +59,9 @@ small{color:#555}
 </section>
 </main>
 <script>
-const BUILD="2.4";
+const BUILD="2.5";
 const S={
- schema:"FARASER-MOTHER-BUILD-v2.4",
+ schema:"FARASER-MOTHER-BUILD-v2.5",
  status:"OPEN", cycle_id:"", created_at:new Date().toISOString(),
  files:[], decisions:{}, recovery:null, closure:null
 };
@@ -107,19 +107,23 @@ function render(){
 }
 function decision(i,v){if(S.status!=="CLOSED")S.decisions[S.files[i].evidence_id]=v;}
 function digits(s,b){const chars="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";return [...s.toUpperCase()].map(c=>chars.indexOf(c));}
+function fiberSizeFromDigits(d,b){
+ let L=d.length, M=1;
+ for(let i=0;i<Math.floor(L/2);i++){let z=Math.abs(d[i]-d[L-1-i]);M*=b-z;}
+ if(L%2)M*=b;
+ return M;
+}
 function recover(){
  let b=+document.getElementById("base").value,s=document.getElementById("state").value.trim().toUpperCase(),d=digits(s,b);
  if(d.some(x=>x<0||x>=b)||!s){document.getElementById("recoveryOut").textContent="Invalid fixed-width state.";return}
- let L=d.length,rho=[],a=[],M=L%2;
- for(let i=0;i<Math.floor(L/2);i++){let z=Math.abs(d[i]-d[L-1-i]);rho.push(z);a.push(d[i]-d[L-1-i]);M*=b-z}
- let center=L%2?b:1; M*=center;
+ let L=d.length,rho=[],a=[];
+ for(let i=0;i<Math.floor(L/2);i++){let z=Math.abs(d[i]-d[L-1-i]);rho.push(z);a.push(d[i]-d[L-1-i]);}
+ let M=fiberSizeFromDigits(d,b);
  S.recovery={base:b,width:L,state:s,rho,signed_vector:a,fiber_size:M,min_fixed_bits:Math.ceil(Math.log2(M))};
  document.getElementById("recoveryOut").textContent=JSON.stringify(S.recovery,null,2);
 }
 async function canon(obj){return JSON.stringify(obj,Object.keys(obj).sort());}
-function decisionRecords(){
- return S.files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:S.decisions[x.evidence_id]||"PENDING"}));
-}
+function decisionRecords(){return S.files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:S.decisions[x.evidence_id]||"PENDING"}));}
 async function closeCycle(){
  if(S.status==="CLOSED")return;
  let counts={PENDING:0,ACCEPTED:0,REJECTED:0};
@@ -141,7 +145,7 @@ function newCycle(){
 function download(name,data,type){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();}
 function exportAll(){
  let cert={...S,decisions:decisionRecords(),exported_at:new Date().toISOString(),limits:["Local prototype","Hashing is not external authenticity proof","PDF/DOC/XLS semantic extraction is not performed in-browser","Review decisions are human-controlled"]};
- let json=JSON.stringify(cert,null,2), md=`# FARASER Case Package v${BUILD}\n\nCycle: ${S.cycle_id}\nStatus: ${S.status}\nFiles: ${S.files.length}\n\n## Evidence decision integrity\nEach evidence record has a unique evidence_id. SHA-256 identifies content and is not used as the decision key, so duplicate content can carry independent review decisions.\n\n## Principle\nNothing is deleted inside the cycle; rejected and unresolved items remain recorded.\n\n## Limits\n- Local prototype.\n- SHA-256 does not prove external authenticity.\n- Complex document semantic extraction/OCR is outside this browser build.\n- Review decisions remain human-controlled.\n`;
+ let json=JSON.stringify(cert,null,2), md=`# FARASER Case Package v${BUILD}\n\nCycle: ${S.cycle_id}\nStatus: ${S.status}\nFiles: ${S.files.length}\n\n## Evidence decision integrity\nEach evidence record has a unique evidence_id. SHA-256 identifies content and is not used as the decision key, so duplicate content can carry independent review decisions.\n\n## Fiber-size correction\nThe fixed-width fiber cardinality starts from M=1, multiplies each mirror-pair factor (b-|a_i|), and multiplies by b only for an odd central digit.\n\n## Principle\nNothing is deleted inside the cycle; rejected and unresolved items remain recorded.\n\n## Limits\n- Local prototype.\n- SHA-256 does not prove external authenticity.\n- Complex document semantic extraction/OCR is outside this browser build.\n- Review decisions remain human-controlled.\n`;
  download(`FARASER_${S.cycle_id||"CASE"}_CERTIFICATE.json`,json,"application/json");
  download(`FARASER_${S.cycle_id||"CASE"}_REPORT.md`,md,"text/markdown");
  document.getElementById("exportOut").textContent="JSON certificate + Markdown report exported.";
@@ -150,24 +154,16 @@ render();
 async function runSelfTest(){
  const out=document.getElementById("diagOut"),tests=[],add=(name,pass,detail)=>tests.push({name,pass,detail});
  try{
-  add("Schema present",S.schema==="FARASER-MOTHER-BUILD-v2.4","v2.4");
-  add("Unique evidence IDs",(()=>{
-   let a=newEvidenceId(),b=newEvidenceId(); return a!==b;
-  })(),"two generated evidence IDs differ");
-  add("Duplicate decision independence",(()=>{
-   let sha="TEST-SAME-SHA",a=newEvidenceId(),b=newEvidenceId(),d={};d[a]="ACCEPTED";d[b]="REJECTED";
-   return d[a]==="ACCEPTED"&&d[b]==="REJECTED"&&a!==b;
-  })(),"same SHA may have independent decisions when keyed by evidence_id");
-  add("Snapshot decision preservation",(()=>{
-   let a=newEvidenceId(),b=newEvidenceId(),files=[{evidence_id:a,sha256:"X"},{evidence_id:b,sha256:"X"}],d={};d[a]="ACCEPTED";d[b]="REJECTED";
-   let r=files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:d[x.evidence_id]}));
-   return r.length===2&&r[0].decision==="ACCEPTED"&&r[1].decision==="REJECTED";
-  })(),"two identical SHA records retain two decisions");
+  add("Schema present",S.schema==="FARASER-MOTHER-BUILD-v2.5","v2.5");
+  add("Unique evidence IDs",(()=>{let a=newEvidenceId(),b=newEvidenceId();return a!==b;})(),"two generated evidence IDs differ");
+  add("Duplicate decision independence",(()=>{let a=newEvidenceId(),b=newEvidenceId(),d={};d[a]="ACCEPTED";d[b]="REJECTED";return d[a]==="ACCEPTED"&&d[b]==="REJECTED"&&a!==b;})(),"same SHA may have independent decisions when keyed by evidence_id");
+  add("Snapshot decision preservation",(()=>{let a=newEvidenceId(),b=newEvidenceId(),files=[{evidence_id:a,sha256:"X"},{evidence_id:b,sha256:"X"}],d={};d[a]="ACCEPTED";d[b]="REJECTED";let r=files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:d[x.evidence_id]}));return r.length===2&&r[0].decision==="ACCEPTED"&&r[1].decision==="REJECTED";})(),"two identical SHA records retain two decisions");
   add("No deletion principle","Nothing is deleted inside the cycle; rejected and unresolved results remain recorded."!=="","declared");
-  let b=10,s="000188",d=digits(s,b),M=s.length%2; for(let i=0;i<Math.floor(s.length/2);i++){let z=Math.abs(d[i]-d[s.length-1-i]);M*=b-z;} M*=s.length%2?b:1;
-  add("Fiber formula demo",M===36,`000188 => M=${M}`);
-  let b2=10,s2="001088",d2=digits(s2,b2),M2=s2.length%2; for(let i=0;i<Math.floor(s2.length/2);i++){let z=Math.abs(d2[i]-d2[s2.length-1-i]);M2*=b2-z;} M2*=s2.length%2?b2:1;
+  let d1=digits("000188",10), M1=fiberSizeFromDigits(d1,10);
+  add("Fiber formula demo",M1===36,`000188 => M=${M1}`);
+  let d2=digits("001088",10), M2=fiberSizeFromDigits(d2,10);
   add("Independent second fiber demo",M2===36,`001088 => M=${M2}`);
+  add("Odd-width center factor",fiberSizeFromDigits(digits("12345",10),10)===900,"12345 => M=900");
   add("Decision vocabulary",["PENDING","ACCEPTED","REJECTED"].length===3,"review states available");
   add("Closure state machine",S.status==="OPEN"||S.status==="CLOSED","valid state");
  }catch(e){add("Runtime integrity",false,String(e))}
@@ -176,7 +172,7 @@ async function runSelfTest(){
 async function exportCanonicalSnapshot(){
  const cleanFiles=S.files.map(x=>({evidence_id:x.evidence_id,name:x.name,normalized_name:x.normalized_name,size:x.size,type:x.type,lastModified:x.lastModified,sha256:x.sha256}));
  const snapshot={
-  schema:"FARASER-CANONICAL-CASE-SNAPSHOT-v2.5",
+  schema:"FARASER-CANONICAL-CASE-SNAPSHOT-v2.6",
   author:"Farah Yaakoubi Karroua",cycle_id:S.cycle_id,status:S.status,created_at:S.created_at,
   files:cleanFiles,decisions:decisionRecords(),recovery:S.recovery,closure:S.closure,
   preservation_principle:"Nothing is deleted inside the cycle; rejected and unresolved items remain recorded.",
