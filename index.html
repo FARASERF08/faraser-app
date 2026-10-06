@@ -176,11 +176,11 @@ async function runSelfTest(){
  try{
    add("Schema present",S.schema==="FARASER-MOTHER-BUILD-v2.2","core schema retained");
    add("No deletion principle","Nothing is deleted inside the cycle; rejected and unresolved results remain recorded."!=="","declared");
-   let b=10,s="000188",d=digits(s,b),rho=[],M=s.length%2;
+   let b=10,s="000188",d=digits(s,b),rho=[],M=1;
    for(let i=0;i<Math.floor(s.length/2);i++){let z=Math.abs(d[i]-d[s.length-1-i]);rho.push(z);M*=b-z;}
    M*=s.length%2?b:1;
    add("Fiber formula demo",M===36,"000188 => M=36");
-   let b2=10,s2="001088",d2=digits(s2,b2),M2=s2.length%2;
+   let b2=10,s2="001088",d2=digits(s2,b2),M2=1;
    for(let i=0;i<Math.floor(s2.length/2);i++){let z=Math.abs(d2[i]-d2[s2.length-1-i]);M2*=b2-z;}
    M2*=s2.length%2?b2:1;
    add("Independent second fiber demo",M2===36,"001088 => M=36");
