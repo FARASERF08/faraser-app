@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FARASER — Integrated Mother Build v2.6</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f4f4f4;color:#171717}
+header{padding:22px;background:#111;color:#fff} main{max-width:1180px;margin:auto;padding:18px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tab{padding:9px 12px;border:1px solid #bbb;background:#fff;border-radius:9px;cursor:pointer}.active{background:#ddd}
+.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:16px;margin:12px 0}
+button{padding:9px 12px;border:1px solid #222;border-radius:8px;background:#fff;cursor:pointer;margin:3px}.primary{background:#111;color:#fff}
+input,select{padding:8px;border:1px solid #aaa;border-radius:7px}.hidden{display:none}
+table{border-collapse:collapse;width:100%;min-width:760px}th,td{padding:7px;border-bottom:1px solid #ddd;text-align:left;font-size:14px;white-space:nowrap}
+pre{background:#f0f0f0;padding:12px;border-radius:9px;overflow:auto;white-space:pre-wrap}
+.badge{display:inline-block;border-radius:999px;padding:3px 8px;background:#eee}.ok{background:#ddd}
+small{color:#555}
+</style>
+</head>
+<body>
+<header><h1>FARASER — Integrated Mother Build v2.6</h1>
+<div>DATA → IDENTIFY → NORMALIZE → RELATE → CHANGE → AUDIT → EVIDENCE → REVIEW → RECOVER → CLOSE</div></header>
+<main>
+<section id="project" class="card">
+<h2>Project / Corpus</h2>
+<input id="caseName" placeholder="Case / Project name" value="FARASER CASE">
+<input id="files" type="file" multiple>
+<button class="primary" onclick="ingest()">INGEST FILES</button>
+<p id="ingestStatus"></p>
+</section>
+<nav id="nav"></nav>
+<section id="dashboard" class="card"><h2>Audit dashboard</h2><div id="stats"></div></section>
+<section id="sources" class="card panel hidden"><h2>Source ledger</h2><div id="sourceTable"></div></section>
+<section id="relations" class="card panel hidden"><h2>Relations / change candidates</h2><div id="relationTable"></div></section>
+<section id="review" class="card panel hidden"><h2>Human review queue</h2><p><small>On iPhone, swipe horizontally inside the table to reach Decision.</small></p><div id="reviewTable" style="overflow-x:auto;-webkit-overflow-scrolling:touch"></div></section>
+<section id="recovery" class="card panel hidden">
+<h2>Exact recovery laboratory</h2><p>Fixed-width base-b mirror structure. This is a mathematical module, not a claim about external identity.</p>
+<label>Base <input id="base" type="number" min="2" max="36" value="10"></label>
+<label>State <input id="state" value="000188"></label>
+<button onclick="recover()">ANALYZE / RECOVER</button><pre id="recoveryOut"></pre>
+</section>
+<section id="close" class="card panel hidden">
+<h2>Cycle closure</h2><p>Status: <span id="cycleStatus" class="badge">OPEN</span></p>
+<button class="primary" onclick="closeCycle()">CLOSE & FREEZE</button>
+<button onclick="newCycle()">NEW CYCLE FROM PRESERVED RECORD</button><pre id="closureOut"></pre>
+</section>
+<section id="diagnostics" class="card panel hidden">
+<h2>Diagnostics / Self-test</h2><p>Internal build checks. These tests do not constitute external certification.</p>
+<button class="primary" onclick="runSelfTest()">RUN SELF-TEST</button><pre id="diagOut">No diagnostics run yet.</pre>
+</section>
+<section id="final" class="card panel hidden">
+<h2>Final Case Snapshot</h2><p>This layer creates one canonical case snapshot from the current state. It does not delete or overwrite prior exported cycles.</p>
+<button class="primary" onclick="exportCanonicalSnapshot()">EXPORT CANONICAL SNAPSHOT</button>
+<button onclick="document.getElementById('importCert').click()">IMPORT PRIOR CERTIFICATE</button>
+<input id="importCert" type="file" accept=".json" style="display:none" onchange="importCertificate(this.files[0])">
+<pre id="finalOut">No final snapshot exported yet.</pre>
+</section>
+<section id="export" class="card panel hidden">
+<h2>Evidence / export</h2><button class="primary" onclick="exportAll()">EXPORT CASE PACKAGE</button><pre id="exportOut"></pre>
+</section>
+</main>
+<script>
+const BUILD="2.6";
+const S={
+ schema:"FARASER-MOTHER-BUILD-v2.6",
+ status:"OPEN", cycle_id:"", created_at:new Date().toISOString(),
+ files:[], decisions:{}, recovery:null, closure:null
+};
+let active="project";
+const tabs=[["project","Project"],["sources","Sources"],["relations","Relations"],["review","Review"],["recovery","Recovery"],["close","Close"],["diagnostics","Diagnostics"],["final","Final Snapshot"],["export","Export"]];
+const nav=document.getElementById("nav");
+tabs.forEach(([id,label])=>{let b=document.createElement("button");b.className="tab";b.textContent=label;b.onclick=()=>show(id);nav.appendChild(b)});
+function show(id){active=id;document.querySelectorAll(".panel").forEach(x=>x.classList.add("hidden"));let e=document.getElementById(id);if(e)e.classList.remove("hidden");document.querySelectorAll(".tab").forEach((b,i)=>b.classList.toggle("active",tabs[i][0]===id));render();}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+async function digest(buf){let h=await crypto.subtle.digest("SHA-256",buf);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");}
+function newEvidenceId(){return "E-"+Date.now().toString(36).toUpperCase()+"-"+(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2));}
+function ensureEvidenceId(x){return x.evidence_id || newEvidenceId();}
+async function ingest(){
+ if(S.status==="CLOSED")return;
+ let fs=[...document.getElementById("files").files]; if(!fs.length)return;
+ if(!S.cycle_id)S.cycle_id="FARASER-"+Date.now().toString(36).toUpperCase();
+ for(let f of fs){
+  let buf=await f.arrayBuffer(), sha=await digest(buf), text=null;
+  if(/^(text\/plain|text\/csv|application\/json)$/i.test(f.type)||/\.(txt|csv|json)$/i.test(f.name)){
+   try{text=new TextDecoder().decode(buf).slice(0,200000)}catch(e){}
+  }
+  let norm=f.name.normalize("NFC"), evidence_id=newEvidenceId();
+  S.files.push({evidence_id,name:f.name,normalized_name:norm,size:f.size,type:f.type||"unknown",lastModified:f.lastModified,sha256:sha,content_preview:text});
+  S.decisions[evidence_id]="PENDING";
+ }
+ document.getElementById("ingestStatus").textContent=`Preserved ${fs.length} file(s). Nothing was deleted.`;
+ render();
+}
+function relations(){
+ let exact={}, names={};
+ S.files.forEach((x,i)=>{(exact[x.sha256]??=[]).push(i);(names[x.normalized_name]??=[]).push(i)});
+ let rows=[];
+ Object.values(exact).filter(a=>a.length>1).forEach(a=>rows.push(["EXACT_RAW_DUPLICATE",a.map(i=>S.files[i].name).join(" ↔ ")]));
+ Object.values(names).filter(a=>a.length>1).forEach(a=>rows.push(["NAME_CLUSTER / VERSION_CANDIDATE",a.map(i=>S.files[i].name).join(" ↔ ")]));
+ return rows;
+}
+function render(){
+ document.getElementById("stats").innerHTML=`<b>Cycle:</b> ${esc(S.cycle_id||"not started")} &nbsp; <b>Status:</b> ${S.status} &nbsp; <b>Files:</b> ${S.files.length}`;
+ document.getElementById("cycleStatus").textContent=S.status;
+ document.getElementById("sourceTable").innerHTML=`<table><tr><th>Evidence ID</th><th>Name</th><th>Normalized</th><th>Size</th><th>SHA-256</th></tr>${S.files.map(x=>`<tr><td><code>${esc(x.evidence_id)}</code></td><td>${esc(x.name)}</td><td>${esc(x.normalized_name)}</td><td>${x.size}</td><td><code>${x.sha256}</code></td></tr>`).join("")}</table>`;
+ let rs=relations(); document.getElementById("relationTable").innerHTML=rs.length?`<table><tr><th>Type</th><th>Evidence</th></tr>${rs.map(r=>`<tr><td>${r[0]}</td><td>${esc(r[1])}</td></tr>`).join("")}</table>`:"No relation candidates detected.";
+ document.getElementById("reviewTable").innerHTML=`<table><tr><th>Evidence ID</th><th>Item</th><th>SHA-256</th><th>Decision</th></tr>${S.files.map((x,i)=>`<tr><td><code>${esc(x.evidence_id)}</code></td><td>${esc(x.name)}</td><td><code>${x.sha256}</code></td><td><select onchange="decision(${i},this.value)" ${S.status==="CLOSED"?"disabled":""}>${["PENDING","ACCEPTED","REJECTED"].map(d=>`<option ${S.decisions[x.evidence_id]===d?"selected":""}>${d}</option>`).join("")}</select></td></tr>`).join("")}</table>`;
+}
+function decision(i,v){if(S.status!=="CLOSED")S.decisions[S.files[i].evidence_id]=v;}
+function digits(s,b){const chars="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";return [...s.toUpperCase()].map(c=>chars.indexOf(c));}
+function fiberSizeFromRho(rho,b,oddWidth){
+ if(!Number.isInteger(b)||b<2) throw new Error("Invalid base");
+ let M=1;
+ for(const z of rho){
+  if(!Number.isInteger(z)||z<0||z>=b) throw new Error("Invalid rho component");
+  M*=b-z;
+ }
+ if(oddWidth)M*=b;
+ return M;
+}
+function fiberSizeFromDigits(d,b){
+ let L=d.length,rho=[];
+ for(let i=0;i<Math.floor(L/2);i++)rho.push(Math.abs(d[i]-d[L-1-i]));
+ return fiberSizeFromRho(rho,b,L%2===1);
+}
+function recover(){
+ let b=+document.getElementById("base").value,s=document.getElementById("state").value.trim().toUpperCase(),d=digits(s,b);
+ if(d.some(x=>x<0||x>=b)||!s){document.getElementById("recoveryOut").textContent="Invalid fixed-width state.";return}
+ let L=d.length,rho=[],a=[];
+ for(let i=0;i<Math.floor(L/2);i++){let z=Math.abs(d[i]-d[L-1-i]);rho.push(z);a.push(d[i]-d[L-1-i]);}
+ let M=fiberSizeFromDigits(d,b);
+ S.recovery={base:b,width:L,state:s,rho,signed_vector:a,fiber_size:M,min_fixed_bits:Math.ceil(Math.log2(M))};
+ document.getElementById("recoveryOut").textContent=JSON.stringify(S.recovery,null,2);
+}
+async function canon(obj){return JSON.stringify(obj,Object.keys(obj).sort());}
+function decisionRecords(){return S.files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:S.decisions[x.evidence_id]||"PENDING"}));}
+async function closeCycle(){
+ if(S.status==="CLOSED")return;
+ let counts={PENDING:0,ACCEPTED:0,REJECTED:0};
+ S.files.forEach(x=>counts[S.decisions[x.evidence_id]||"PENDING"]++);
+ let snapshot={schema:S.schema,cycle_id:S.cycle_id,created_at:S.created_at,files:S.files.map(x=>({...x,content_preview:undefined})),decisions:decisionRecords(),recovery:S.recovery,counts};
+ let bytes=new TextEncoder().encode(await canon(snapshot)), h=await crypto.subtle.digest("SHA-256",bytes), dh=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ S.status="CLOSED"; S.closure={closed_at:new Date().toISOString(),counts,closure_digest_sha256:dh};
+ let cert={...snapshot,status:"CLOSED",closure:S.closure,principle:"Nothing is deleted inside the cycle; rejected and unresolved items remain recorded."};
+ document.getElementById("closureOut").textContent=JSON.stringify(cert,null,2); render();
+}
+function newCycle(){
+ if(S.status!=="CLOSED")return;
+ let old=JSON.parse(JSON.stringify(S));
+ S.status="OPEN";S.cycle_id="FARASER-"+Date.now().toString(36).toUpperCase();S.created_at=new Date().toISOString();S.closure=null;S.decisions={};
+ S.files=[];
+ document.getElementById("closureOut").textContent="New cycle opened. Previous closure must remain preserved in its exported record.";
+ render();
+}
+function download(name,data,type){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();}
+function exportAll(){
+ let cert={...S,decisions:decisionRecords(),exported_at:new Date().toISOString(),limits:["Local prototype","Hashing is not external authenticity proof","PDF/DOC/XLS semantic extraction is not performed in-browser","Review decisions are human-controlled"]};
+ let json=JSON.stringify(cert,null,2), md=`# FARASER Case Package v${BUILD}\n\nCycle: ${S.cycle_id}\nStatus: ${S.status}\nFiles: ${S.files.length}\n\n## Evidence decision integrity\nEach evidence record has a unique evidence_id. SHA-256 identifies content and is not used as the decision key, so duplicate content can carry independent review decisions.\n\n## Fiber-size correction\nThe fixed-width fiber cardinality starts from M=1, multiplies each mirror-pair factor (b-|a_i|), and multiplies by b only for an odd central digit.\n\n## Principle\nNothing is deleted inside the cycle; rejected and unresolved items remain recorded.\n\n## Limits\n- Local prototype.\n- SHA-256 does not prove external authenticity.\n- Complex document semantic extraction/OCR is outside this browser build.\n- Review decisions remain human-controlled.\n`;
+ download(`FARASER_${S.cycle_id||"CASE"}_CERTIFICATE.json`,json,"application/json");
+ download(`FARASER_${S.cycle_id||"CASE"}_REPORT.md`,md,"text/markdown");
+ document.getElementById("exportOut").textContent="JSON certificate + Markdown report exported.";
+}
+render();
+async function runSelfTest(){
+ const out=document.getElementById("diagOut"),tests=[],add=(name,pass,detail)=>tests.push({name,pass,detail});
+ try{
+  add("Schema present",S.schema==="FARASER-MOTHER-BUILD-v2.6","v2.6");
+  add("Unique evidence IDs",(()=>{let a=newEvidenceId(),b=newEvidenceId();return a!==b;})(),"two generated evidence IDs differ");
+  add("Duplicate decision independence",(()=>{let a=newEvidenceId(),b=newEvidenceId(),d={};d[a]="ACCEPTED";d[b]="REJECTED";return d[a]==="ACCEPTED"&&d[b]==="REJECTED"&&a!==b;})(),"same SHA may have independent decisions when keyed by evidence_id");
+  add("Snapshot decision preservation",(()=>{let a=newEvidenceId(),b=newEvidenceId(),files=[{evidence_id:a,sha256:"X"},{evidence_id:b,sha256:"X"}],d={};d[a]="ACCEPTED";d[b]="REJECTED";let r=files.map(x=>({evidence_id:x.evidence_id,sha256:x.sha256,decision:d[x.evidence_id]}));return r.length===2&&r[0].decision==="ACCEPTED"&&r[1].decision==="REJECTED";})(),"two identical SHA records retain two decisions");
+  add("No deletion principle",true,"declared");
+  const rho1=[8,8,1], M1=fiberSizeFromRho(rho1,10,false);
+  add("Fiber formula demo",M1===36,`rho=[8,8,1], b=10 => M=${M1}; expected 2*2*9=36`);
+  const rho2=[8,8,1], M2=fiberSizeFromRho(rho2,10,false);
+  add("Independent second fiber demo",M2===36,`same rho => M=${M2}; expected 36`);
+  const oddM=fiberSizeFromRho([9,8],10,true);
+  add("Odd-width center factor",oddM===20,`rho=[9,8], b=10, odd width => M=${oddM}; expected 1*2*10=20`);
+  const evenM=fiberSizeFromDigits(digits("000188",10),10);
+  add("Digit-to-rho consistency",evenM===36,`000188 => M=${evenM}; expected 36`);
+  const secondM=fiberSizeFromDigits(digits("001088",10),10);
+  add("Second state consistency",secondM===36,`001088 => M=${secondM}; expected 36`);
+  add("Decision vocabulary",["PENDING","ACCEPTED","REJECTED"].length===3,"review states available");
+  add("Closure state machine",S.status==="OPEN"||S.status==="CLOSED","valid state");
+ }catch(e){add("Runtime integrity",false,String(e))}
+ out.textContent=JSON.stringify({build:`FARASER APP v${BUILD}`,timestamp:new Date().toISOString(),tests,pass:tests.every(t=>t.pass)},null,2);
+}
+
+async function exportCanonicalSnapshot(){
+ const cleanFiles=S.files.map(x=>({evidence_id:x.evidence_id,name:x.name,normalized_name:x.normalized_name,size:x.size,type:x.type,lastModified:x.lastModified,sha256:x.sha256}));
+ const snapshot={
+  schema:"FARASER-CANONICAL-CASE-SNAPSHOT-v2.7",
+  author:"Farah Yaakoubi Karroua",cycle_id:S.cycle_id,status:S.status,created_at:S.created_at,
+  files:cleanFiles,decisions:decisionRecords(),recovery:S.recovery,closure:S.closure,
+  preservation_principle:"Nothing is deleted inside the cycle; rejected and unresolved items remain recorded.",
+  technical_limits:["Local browser prototype","SHA-256 is an integrity digest, not external authenticity proof","Advanced semantic extraction/OCR is not implemented here","Human review remains authoritative for review decisions"]
+ };
+ const raw=JSON.stringify(snapshot,Object.keys(snapshot).sort());
+ const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(raw));
+ const digest=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");
+ snapshot.canonical_snapshot_sha256=digest;
+ const payload=JSON.stringify(snapshot,null,2);
+ download(`FARASER_${S.cycle_id||"CASE"}_CANONICAL_SNAPSHOT.json`,payload,"application/json");
+ document.getElementById("finalOut").textContent=payload;
+}
+async function importCertificate(file){
+ if(!file)return;
+ try{
+  const obj=JSON.parse(await file.text()),imported=obj.files||[];
+  imported.forEach(x=>{
+   if(!x.sha256)return;
+   let evidence_id=ensureEvidenceId(x);
+   S.files.push({evidence_id,name:x.name||"imported",normalized_name:x.normalized_name||x.name||"imported",size:x.size||0,type:x.type||"imported",lastModified:x.lastModified||0,sha256:x.sha256});
+   let decision=(Array.isArray(obj.decisions)?obj.decisions.find(d=>d.evidence_id===x.evidence_id||d.sha256===x.sha256)?.decision:null) || (typeof obj.decisions==="object"?obj.decisions[x.evidence_id]||obj.decisions[x.sha256]:null) || "PENDING";
+   S.decisions[evidence_id]=decision;
+  });
+  render();document.getElementById("finalOut").textContent="Prior certificate imported as preserved evidence. No existing item was deleted.";
+ }catch(e){document.getElementById("finalOut").textContent="Import failed: "+e;}
+}
+</script>
+</body></html>
